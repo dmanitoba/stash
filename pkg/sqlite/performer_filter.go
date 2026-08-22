@@ -10,6 +10,12 @@ import (
 	"github.com/stashapp/stash/pkg/utils"
 )
 
+// Tags to exclude from "appears with" performer calculations
+// Add or remove tag names (case-insensitive) to customize which scenes are excluded
+var excludedAppearsWithTags = []string{
+	"Compilation",
+}
+
 type performerFilterHandler struct {
 	performerFilter *models.PerformerFilterType
 }
@@ -778,16 +784,6 @@ func (qb *performerFilterHandler) appearsWithCriterionHandler(performers *models
 					"joinTable":    performersScenesTable,
 					"primaryFK":    sceneIDColumn,
 				},
-				{
-					"primaryTable": performersImagesTable,
-					"joinTable":    performersImagesTable,
-					"primaryFK":    imageIDColumn,
-				},
-				{
-					"primaryTable": performersGalleriesTable,
-					"joinTable":    performersGalleriesTable,
-					"primaryFK":    galleryIDColumn,
-				},
 			}
 
 			if len(performers.Value) == '0' {
@@ -800,10 +796,27 @@ func (qb *performerFilterHandler) appearsWithCriterionHandler(performers *models
 
 			f.addWith("performer(id) AS (VALUES(" + valuesClause + "))")
 
+			// Build the tag exclusion clause
+			tagExclusionClause := ""
+			if len(excludedAppearsWithTags) > 0 {
+				// Create a list of tag names for SQL IN clause
+				var tagNames []string
+				for _, tagName := range excludedAppearsWithTags {
+					tagNames = append(tagNames, fmt.Sprintf("'%s'", strings.ReplaceAll(tagName, "'", "''")))
+				}
+				tagExclusionClause = fmt.Sprintf(`
+				AND {primaryTable}.{primaryFK} NOT IN (
+					SELECT scenes_tags.scene_id 
+					FROM scenes_tags 
+					INNER JOIN tags ON scenes_tags.tag_id = tags.id 
+					WHERE tags.name IN (%s)
+				)`, strings.Join(tagNames, ", "))
+			}
+
 			templStr := `SELECT {primaryTable}2.performer_id FROM {primaryTable}
 			INNER JOIN {primaryTable} AS {primaryTable}2 ON {primaryTable}.{primaryFK} = {primaryTable}2.{primaryFK}
 			INNER JOIN performer ON {primaryTable}.performer_id = performer.id
-			WHERE {primaryTable}2.performer_id != performer.id`
+			WHERE {primaryTable}2.performer_id != performer.id` + tagExclusionClause
 
 			if performers.Modifier == models.CriterionModifierIncludesAll && len(performers.Value) > 1 {
 				templStr += `
