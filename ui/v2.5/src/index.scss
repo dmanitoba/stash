@@ -423,24 +423,25 @@ dd {
   }
 }
 
-/* the .apple class denotes areas where rendering on some apple platforms has been inconsistent with other platforms
-   these rules aim to address those inconsistences */
-.apple {
-  @media (min-width: 576px) {
-    .detail-header {
-      .detail-container {
-        display: flex;
-      }
+/* .detail-container used to rely on .detail-header-image's float being avoided by
+   the following block, which WebKit (Safari, all iPadOS browsers) doesn't do reliably.
+   Making it a flex container sidesteps that: flex items ignore float entirely, so this
+   is applied unconditionally rather than gated to a UA-sniffed .apple class, which was
+   fragile to Safari/iPadOS UA string changes (see stashapp/stash#7234). */
+@media (min-width: 576px) {
+  .detail-header {
+    .detail-container {
+      display: flex;
     }
+  }
 
-    .detail-header.edit .row {
-      flex: 1;
-    }
+  .detail-header.edit .row {
+    flex: 1;
+  }
 
-    .detail-header.full-width .detail-header-image,
-    .detail-header.edit .detail-header-image {
-      display: unset;
-    }
+  .detail-header.full-width .detail-header-image,
+  .detail-header.edit .detail-header-image {
+    display: unset;
   }
 }
 
