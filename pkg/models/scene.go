@@ -85,6 +85,8 @@ type SceneFilterType struct {
 	TagCount *IntCriterionInput `json:"tag_count"`
 	// Filter to only include scenes with performers with these tags
 	PerformerTags *HierarchicalMultiCriterionInput `json:"performer_tags"`
+	// Filter to only include scenes whose studio has these tags
+	StudioTags *HierarchicalMultiCriterionInput `json:"studio_tags"`
 	// Filter scenes that have performers that have been favorited
 	PerformerFavorite *bool `json:"performer_favorite"`
 	// Filter scenes by performer age at time of scene

@@ -188,6 +188,7 @@ func (qb *sceneFilterHandler) criterionHandler() criterionHandler {
 
 		qb.galleriesCriterionHandler(sceneFilter.Galleries),
 		qb.performerTagsCriterionHandler(sceneFilter.PerformerTags),
+		qb.studioTagsCriterionHandler(sceneFilter.StudioTags),
 		qb.performerFavoriteCriterionHandler(sceneFilter.PerformerFavorite),
 		qb.performerAgeCriterionHandler(sceneFilter.PerformerAge),
 		qb.duplicatedCriterionHandler(sceneFilter.Duplicated),
@@ -521,6 +522,22 @@ func (qb *sceneFilterHandler) tagsCriterionHandler(tags *models.HierarchicalMult
 		joinAs:         "scene_tag",
 		joinTable:      scenesTagsTable,
 		primaryFK:      sceneIDColumn,
+	}
+
+	return h.handler(tags)
+}
+
+func (qb *sceneFilterHandler) studioTagsCriterionHandler(tags *models.HierarchicalMultiCriterionInput) criterionHandlerFunc {
+	h := joinedHierarchicalMultiCriterionHandlerBuilder{
+		primaryTable: sceneTable,
+		primaryKey:   "studio_id",
+		foreignTable: tagTable,
+		foreignFK:    "tag_id",
+
+		relationsTable: "tags_relations",
+		joinAs:         "studio_tag",
+		joinTable:      studiosTagsTable,
+		primaryFK:      studioIDColumn,
 	}
 
 	return h.handler(tags)
