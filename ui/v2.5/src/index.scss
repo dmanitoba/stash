@@ -432,6 +432,20 @@ dd {
   .detail-header {
     .detail-container {
       display: flex;
+
+      // as a flex item, .detail-header-image would otherwise be shrunk by
+      // flexbox to make room for .row's content instead of keeping its own
+      // (possibly custom-CSS-enlarged) size
+      > .detail-header-image {
+        flex-shrink: 0;
+      }
+
+      // flex items default to a content-based min-width, which stops .row's
+      // wide contents (e.g. plugin-added detail sections) from shrinking to
+      // fit the viewport and pushes the page into horizontal overflow
+      > .row {
+        min-width: 0;
+      }
     }
   }
 
