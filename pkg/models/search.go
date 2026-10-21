@@ -70,7 +70,7 @@ func extractOrConditions(words []string, searchSpec *SearchSpecs) []string {
 				// this will be the last word not preceded by OR
 				lastIndex := len(words) - 1
 				for ii := i + 2; ii < len(words); ii += 2 {
-					if !strings.EqualFold(words[ii], or) {
+					if !strings.EqualFold(words[ii], or) && words[ii] != orSymbol {
 						lastIndex = ii - 1
 						break
 					}

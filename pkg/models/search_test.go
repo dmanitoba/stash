@@ -108,6 +108,25 @@ func TestParseSearchString(t *testing.T) {
 			},
 		},
 		{
+			"or symbol chain",
+			"a | b | c",
+			SearchSpecs{
+				AnySets: [][]string{
+					{"a", "b", "c"},
+				},
+			},
+		},
+		{
+			"multi or symbol",
+			"a | b c | d",
+			SearchSpecs{
+				AnySets: [][]string{
+					{"a", "b"},
+					{"c", "d"},
+				},
+			},
+		},
+		{
 			"quoted or",
 			`a "OR" b`,
 			SearchSpecs{
