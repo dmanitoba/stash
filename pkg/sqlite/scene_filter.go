@@ -191,6 +191,7 @@ func (qb *sceneFilterHandler) criterionHandler() criterionHandler {
 		qb.studioTagsCriterionHandler(sceneFilter.StudioTags),
 		qb.performerFavoriteCriterionHandler(sceneFilter.PerformerFavorite),
 		qb.performerAgeCriterionHandler(sceneFilter.PerformerAge),
+		qb.performerGenderCriterionHandler(sceneFilter.PerformerGender),
 		qb.duplicatedCriterionHandler(sceneFilter.Duplicated),
 		&dateCriterionHandler{sceneFilter.Date, "scenes.date", nil},
 		&dateCriterionHandler{sceneFilter.ProductionDate, "scenes.production_date", nil},
@@ -621,6 +622,44 @@ func (qb *sceneFilterHandler) performerAgeCriterionHandler(performerAge *models.
 			ageCalc := "cast(strftime('%Y.%m%d', " + sceneAgeDateExpr + ") - strftime('%Y.%m%d', performers.birthdate) as int)"
 			whereClause, args := getIntWhereClause(ageCalc, performerAge.Modifier, performerAge.Value, performerAge.Value2)
 			f.addWhere(whereClause, args...)
+		}
+	}
+}
+
+// performerGenderCriterionHandler joins the exact same unaliased
+// performers_scenes/performers tables as performerAgeCriterionHandler, so
+// that when both are set, the two conditions are required of the same
+// performer row rather than being satisfied independently by different
+// performers in a multi-performer scene. This relies on filterBuilder's
+// join deduplication (see joins.addUnique in filter.go), which matches
+// joins by table+alias - keep these two literal join calls identical to
+// the ones in performerAgeCriterionHandler if either ever changes.
+//
+// Uses a left join rather than performerAgeCriterionHandler's inner join:
+// the gender WHERE clause already excludes non-matching/NULL rows on its
+// own, and using a left join here avoids forcibly upgrading the shared
+// join to INNER when this criterion is used on its own (see
+// performerFavoriteCriterionHandler, which relies on that same join
+// staying LEFT to still match scenes with zero performers at all). When
+// combined with performer_age, the join ends up INNER anyway, because
+// performer_age's own handler requests that independently.
+func (qb *sceneFilterHandler) performerGenderCriterionHandler(performerGender *models.GenderCriterionInput) criterionHandlerFunc {
+	return func(ctx context.Context, f *filterBuilder) {
+		if performerGender != nil {
+			f.addLeftJoin("performers_scenes", "", "scenes.id = performers_scenes.scene_id")
+			f.addLeftJoin("performers", "", "performers_scenes.performer_id = performers.id")
+
+			genderCopy := *performerGender
+			if genderCopy.Value.IsValid() && len(genderCopy.ValueList) == 0 {
+				genderCopy.ValueList = []models.GenderEnum{genderCopy.Value}
+			}
+
+			values := make([]string, 0, len(genderCopy.ValueList))
+			for _, v := range genderCopy.ValueList {
+				values = append(values, string(v))
+			}
+
+			enumCriterionHandler(genderCopy.Modifier, values, "performers.gender")(ctx, f)
 		}
 	}
 }

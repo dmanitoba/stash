@@ -44,8 +44,10 @@ import { OrganizedCriterionOption } from "src/models/list-filter/criteria/organi
 import { HasMarkersCriterionOption } from "src/models/list-filter/criteria/has-markers";
 import { SidebarBooleanFilter } from "../List/Filters/BooleanFilter";
 import { PerformerAgeCriterionOption } from "src/models/list-filter/scenes";
+import { PerformerGenderCriterionOption } from "src/models/list-filter/criteria/performer-gender";
 import { SidebarDuplicateFilter } from "../List/Filters/DuplicateFilter";
 import { SidebarAgeFilter } from "../List/Filters/SidebarAgeFilter";
+import { SidebarOptionFilter } from "../List/Filters/OptionFilter";
 import { SidebarDurationFilter } from "../List/Filters/SidebarDurationFilter";
 import {
   FilteredSidebarHeader,
@@ -340,6 +342,13 @@ const SidebarContent: React.FC<{
           filter={filter}
           setFilter={setFilter}
           sectionID="performer_age"
+        />
+        <SidebarOptionFilter
+          title={<FormattedMessage id="performer_gender" />}
+          option={PerformerGenderCriterionOption}
+          filter={filter}
+          setFilter={setFilter}
+          sectionID="performer_gender"
         />
       </ScenesFilterSidebarSections>
 

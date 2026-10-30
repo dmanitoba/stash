@@ -1078,7 +1078,7 @@ func (qb *SceneStore) makeQuery(ctx context.Context, sceneFilter *models.SceneFi
 		return nil, err
 	}
 
-	if err := qb.setSceneSort(&query, findFilter); err != nil {
+	if err := qb.setSceneSort(&query, findFilter, sceneFilter); err != nil {
 		return nil, err
 	}
 	query.sortAndPagination += getPagination(findFilter)
@@ -1217,7 +1217,7 @@ var sceneSortOptions = sortOptions{
 	"performer_age",
 }
 
-func (qb *SceneStore) setSceneSort(query *queryBuilder, findFilter *models.FindFilterType) error {
+func (qb *SceneStore) setSceneSort(query *queryBuilder, findFilter *models.FindFilterType, sceneFilter *models.SceneFilterType) error {
 	if findFilter == nil || findFilter.Sort == nil || *findFilter.Sort == "" {
 		return nil
 	}
@@ -1343,8 +1343,20 @@ func (qb *SceneStore) setSceneSort(query *queryBuilder, findFilter *models.FindF
 			// When sorting ascending, NULLs are first by default. Coalescing to the MAX int value supported by sqlite
 			fallback = "9223372036854775807"
 		}
+
+		// If a performer_gender filter is active, restrict the aggregation
+		// to matching performers too - otherwise a scene's position would
+		// still be anchored to its oldest/youngest performer of any
+		// gender, silently undermining a filter like "female, age > 40"
+		// (right scenes, wrong order - see performerGenderCriterionHandler
+		// in scene_filter.go for the filter side of this).
+		var genderClause string
+		if sceneFilter != nil {
+			genderClause = performerGenderSortClause(sceneFilter.PerformerGender)
+		}
+
 		query.sortAndPagination += fmt.Sprintf(
-			" ORDER BY (SELECT COALESCE(%s(JulianDay(%s) - JulianDay(performers.birthdate)), %s) FROM %s as performers INNER JOIN %s AS aggregation WHERE performers.id = aggregation.%s AND aggregation.%s = %s.id) %s",
+			" ORDER BY (SELECT COALESCE(%s(JulianDay(%s) - JulianDay(performers.birthdate)), %s) FROM %s as performers INNER JOIN %s AS aggregation WHERE performers.id = aggregation.%s AND aggregation.%s = %s.id%s) %s",
 			aggregation,
 			sceneAgeDateExpr,
 			fallback,
@@ -1353,6 +1365,7 @@ func (qb *SceneStore) setSceneSort(query *queryBuilder, findFilter *models.FindF
 			performerIDColumn,
 			sceneIDColumn,
 			sceneTable,
+			genderClause,
 			getSortDirection(direction),
 		)
 	case "studio":
@@ -1366,6 +1379,45 @@ func (qb *SceneStore) setSceneSort(query *queryBuilder, findFilter *models.FindF
 	query.sortAndPagination += ", COALESCE(scenes.title, scenes.id) COLLATE NATURAL_CI ASC"
 
 	return nil
+}
+
+// performerGenderSortClause returns a SQL fragment (starting with " AND ")
+// restricting the performer_age sort's per-scene aggregation to performers
+// matching the given gender criterion, or "" if none is set. Values come
+// from a GraphQL enum (GenderEnum), which gqlgen validates before a
+// resolver ever sees it, so they're safe to inline directly here - this
+// sort clause is built as plain text throughout setSceneSort, with no
+// argument-binding path available for it.
+func performerGenderSortClause(g *models.GenderCriterionInput) string {
+	if g == nil {
+		return ""
+	}
+
+	values := g.ValueList
+	if g.Value.IsValid() && len(values) == 0 {
+		values = []models.GenderEnum{g.Value}
+	}
+
+	var quoted []string
+	for _, v := range values {
+		if v.IsValid() {
+			quoted = append(quoted, "'"+string(v)+"'")
+		}
+	}
+	if len(quoted) == 0 {
+		return ""
+	}
+
+	in := "(" + strings.Join(quoted, ",") + ")"
+
+	switch g.Modifier {
+	case models.CriterionModifierIncludes, models.CriterionModifierEquals:
+		return " AND performers.gender IN " + in
+	case models.CriterionModifierExcludes, models.CriterionModifierNotEquals:
+		return " AND (performers.gender IS NULL OR performers.gender NOT IN " + in + ")"
+	default:
+		return ""
+	}
 }
 
 func (qb *SceneStore) SaveActivity(ctx context.Context, id int, resumeTime *float64, playDuration *float64) (bool, error) {

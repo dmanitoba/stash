@@ -1384,6 +1384,7 @@
   "perceptual_similarity": "Perceptual Similarity (pHash)",
   "performer": "Performer",
   "performer_age": "Performer Age",
+  "performer_gender": "Performer Gender",
   "performer_count": "Performer Count",
   "performer_count_all": "Performer Count (All)",
   "performer_favorite": "Performer Favourited",

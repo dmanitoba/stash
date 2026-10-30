@@ -326,6 +326,8 @@ input SceneFilterType {
   performer_favorite: Boolean
   "Filter scenes by performer age at time of scene"
   performer_age: IntCriterionInput
+  "Filter scenes by performer gender - combines with performer_age to mean the same performer (e.g. performer_age > 40 AND performer_gender FEMALE only matches if one performer is both), rather than any performer independently satisfying each"
+  performer_gender: GenderCriterionInput
   "Filter to only include scenes with these performers"
   performers: MultiCriterionInput
   "Filter by performer count"

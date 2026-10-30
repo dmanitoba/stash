@@ -30,6 +30,7 @@ import {
   PhashCriterionOption,
 } from "./criteria/phash";
 import { PerformerFavoriteCriterionOption } from "./criteria/favorite";
+import { PerformerGenderCriterionOption } from "./criteria/performer-gender";
 import { CaptionsCriterionOption } from "./criteria/captions";
 import { StashIDCriterionOption } from "./criteria/stash-ids";
 import { RatingCriterionOption } from "./criteria/rating";
@@ -132,6 +133,7 @@ const criterionOptions = [
   PerformersCriterionOption,
   createMandatoryNumberCriterionOption("performer_count"),
   PerformerAgeCriterionOption,
+  PerformerGenderCriterionOption,
   PerformerFavoriteCriterionOption,
   StudioTagsCriterionOption,
   StudiosCriterionOption,

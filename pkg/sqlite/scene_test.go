@@ -3705,6 +3705,215 @@ func TestSceneQueryPerformers(t *testing.T) {
 	}
 }
 
+// TestSceneQueryPerformerGender guards the join sharing between
+// performer_age and performer_gender: both criteria join the same
+// unaliased performers_scenes/performers tables (see
+// performerGenderCriterionHandler in scene_filter.go), so they must
+// constrain the same performer row rather than being satisfied
+// independently by different performers in a multi-performer scene.
+func TestSceneQueryPerformerGender(t *testing.T) {
+	runWithRollbackTxn(t, "performer gender + age", func(t *testing.T, ctx context.Context) {
+		assert := assert.New(t)
+
+		sceneDate, err := models.ParseDate("2020-01-01")
+		if err != nil {
+			t.Fatalf("parsing scene date: %v", err)
+		}
+		youngBirthdate, err := models.ParseDate("2000-01-01") // 20 at scene date
+		if err != nil {
+			t.Fatalf("parsing birthdate: %v", err)
+		}
+		oldBirthdate, err := models.ParseDate("1970-01-01") // 50 at scene date
+		if err != nil {
+			t.Fatalf("parsing birthdate: %v", err)
+		}
+
+		femaleGender := models.GenderEnumFemale
+		maleGender := models.GenderEnumMale
+		female := models.Performer{Name: "performer-gender-test-female", Gender: &femaleGender, Birthdate: &youngBirthdate}
+		male := models.Performer{Name: "performer-gender-test-male", Gender: &maleGender, Birthdate: &oldBirthdate}
+		if err := db.Performer.Create(ctx, &models.CreatePerformerInput{Performer: &female}); err != nil {
+			t.Fatalf("creating performer: %v", err)
+		}
+		if err := db.Performer.Create(ctx, &models.CreatePerformerInput{Performer: &male}); err != nil {
+			t.Fatalf("creating performer: %v", err)
+		}
+
+		scene := models.Scene{
+			Title: "scene-gender-test-young-female-old-male",
+			Date:  &sceneDate,
+			PerformerIDs: models.NewRelatedIDs([]int{
+				female.ID,
+				male.ID,
+			}),
+		}
+		if err := db.Scene.Create(ctx, &scene, nil); err != nil {
+			t.Fatalf("creating scene: %v", err)
+		}
+
+		containsID := func(scenes []*models.Scene, id int) bool {
+			for _, s := range scenes {
+				if s.ID == id {
+					return true
+				}
+			}
+			return false
+		}
+
+		// Sanity check: performer_age alone matches via the 50-year-old
+		// male, independent of gender.
+		ageOnly := queryScene(ctx, t, db.Scene, &models.SceneFilterType{
+			PerformerAge: &models.IntCriterionInput{
+				Modifier: models.CriterionModifierGreaterThan,
+				Value:    40,
+			},
+		}, nil)
+		assert.True(containsID(ageOnly, scene.ID), "expected performer_age alone to match via the male performer")
+
+		// The regression this guards: age > 40 AND gender FEMALE must NOT
+		// match this scene, because no single performer is both - the
+		// female performer here is 20, not over 40.
+		ageAndWrongGender := queryScene(ctx, t, db.Scene, &models.SceneFilterType{
+			PerformerAge: &models.IntCriterionInput{
+				Modifier: models.CriterionModifierGreaterThan,
+				Value:    40,
+			},
+			PerformerGender: &models.GenderCriterionInput{
+				Value:    models.GenderEnumFemale,
+				Modifier: models.CriterionModifierEquals,
+			},
+		}, nil)
+		assert.False(containsID(ageAndWrongGender, scene.ID), "performer_age + performer_gender matched via different performers - join sharing regressed")
+
+		// Positive case: age < 30 AND gender FEMALE matches, because the
+		// female performer herself satisfies both.
+		ageAndMatchingGender := queryScene(ctx, t, db.Scene, &models.SceneFilterType{
+			PerformerAge: &models.IntCriterionInput{
+				Modifier: models.CriterionModifierLessThan,
+				Value:    30,
+			},
+			PerformerGender: &models.GenderCriterionInput{
+				Value:    models.GenderEnumFemale,
+				Modifier: models.CriterionModifierEquals,
+			},
+		}, nil)
+		assert.True(containsID(ageAndMatchingGender, scene.ID), "expected performer_age + performer_gender to match when the female performer satisfies both")
+	})
+}
+
+// TestSceneSortPerformerAgeByGender guards the gender-scoping of the
+// performer_age sort's MIN/MAX aggregation (see performerGenderSortClause
+// in scene.go): when a performer_gender filter is active, ASC/DESC must
+// be computed only over performers matching that gender, not every
+// performer in the scene.
+func TestSceneSortPerformerAgeByGender(t *testing.T) {
+	runWithRollbackTxn(t, "performer age sort by gender", func(t *testing.T, ctx context.Context) {
+		assert := assert.New(t)
+
+		sceneDate, err := models.ParseDate("2020-01-01")
+		if err != nil {
+			t.Fatalf("parsing scene date: %v", err)
+		}
+		age20Birthdate, err := models.ParseDate("2000-01-01")
+		if err != nil {
+			t.Fatalf("parsing birthdate: %v", err)
+		}
+		age40Birthdate, err := models.ParseDate("1980-01-01")
+		if err != nil {
+			t.Fatalf("parsing birthdate: %v", err)
+		}
+		age45Birthdate, err := models.ParseDate("1975-01-01")
+		if err != nil {
+			t.Fatalf("parsing birthdate: %v", err)
+		}
+		age50Birthdate, err := models.ParseDate("1970-01-01")
+		if err != nil {
+			t.Fatalf("parsing birthdate: %v", err)
+		}
+
+		femaleGender := models.GenderEnumFemale
+		maleGender := models.GenderEnumMale
+		female20 := models.Performer{Name: "performer-sort-test-female-20", Gender: &femaleGender, Birthdate: &age20Birthdate}
+		female40 := models.Performer{Name: "performer-sort-test-female-40", Gender: &femaleGender, Birthdate: &age40Birthdate}
+		male50 := models.Performer{Name: "performer-sort-test-male-50", Gender: &maleGender, Birthdate: &age50Birthdate}
+		female45 := models.Performer{Name: "performer-sort-test-female-45", Gender: &femaleGender, Birthdate: &age45Birthdate}
+		for _, p := range []*models.Performer{&female20, &female40, &male50, &female45} {
+			if err := db.Performer.Create(ctx, &models.CreatePerformerInput{Performer: p}); err != nil {
+				t.Fatalf("creating performer: %v", err)
+			}
+		}
+
+		// Mixed scene: two females (20, 40) and a male (50). If gender
+		// scoping is broken, DESC would anchor on the male's 50 instead of
+		// the older female's 40.
+		mixedScene := models.Scene{
+			Title: "scene-sort-test-mixed",
+			Date:  &sceneDate,
+			PerformerIDs: models.NewRelatedIDs([]int{
+				female20.ID,
+				female40.ID,
+				male50.ID,
+			}),
+		}
+		if err := db.Scene.Create(ctx, &mixedScene, nil); err != nil {
+			t.Fatalf("creating scene: %v", err)
+		}
+
+		// Comparison scene: a single female aged 45 - strictly between the
+		// mixed scene's correct female MAX (40) and the male's age (50),
+		// so it only lands on the expected side of mixedScene in DESC
+		// order if the male was actually excluded from the aggregation.
+		comparisonScene := models.Scene{
+			Title: "scene-sort-test-comparison-female-45",
+			Date:  &sceneDate,
+			PerformerIDs: models.NewRelatedIDs([]int{
+				female45.ID,
+			}),
+		}
+		if err := db.Scene.Create(ctx, &comparisonScene, nil); err != nil {
+			t.Fatalf("creating scene: %v", err)
+		}
+
+		findIndex := func(scenes []*models.Scene, id int) int {
+			for i, s := range scenes {
+				if s.ID == id {
+					return i
+				}
+			}
+			return -1
+		}
+
+		sortBy := "performer_age"
+		genderFilter := &models.GenderCriterionInput{
+			Value:    models.GenderEnumFemale,
+			Modifier: models.CriterionModifierEquals,
+		}
+		sceneFilter := &models.SceneFilterType{PerformerGender: genderFilter}
+
+		asc := models.SortDirectionEnumAsc
+		ascResults := queryScene(ctx, t, db.Scene, sceneFilter, &models.FindFilterType{Sort: &sortBy, Direction: &asc})
+		ascMixed := findIndex(ascResults, mixedScene.ID)
+		ascComparison := findIndex(ascResults, comparisonScene.ID)
+		assert.NotEqual(-1, ascMixed)
+		assert.NotEqual(-1, ascComparison)
+		// ASC uses MIN(age) among matching-gender performers: mixedScene's
+		// youngest female is 20, comparisonScene's only female is 45.
+		assert.Less(ascMixed, ascComparison, "expected mixed scene (female MIN age 20) before comparison scene (45) ascending")
+
+		desc := models.SortDirectionEnumDesc
+		descResults := queryScene(ctx, t, db.Scene, sceneFilter, &models.FindFilterType{Sort: &sortBy, Direction: &desc})
+		descMixed := findIndex(descResults, mixedScene.ID)
+		descComparison := findIndex(descResults, comparisonScene.ID)
+		assert.NotEqual(-1, descMixed)
+		assert.NotEqual(-1, descComparison)
+		// DESC uses MAX(age) among matching-gender performers: mixedScene's
+		// oldest FEMALE is 40 (the male's 50 must be excluded), so
+		// comparisonScene's 45 should rank first. If gender scoping were
+		// broken, the male's 50 would put mixedScene first instead.
+		assert.Less(descComparison, descMixed, "expected comparison scene (45) before mixed scene (female MAX age 40, male excluded) descending")
+	})
+}
+
 func TestSceneQueryTags(t *testing.T) {
 	tests := []struct {
 		name        string
